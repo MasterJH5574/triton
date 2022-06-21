@@ -34,16 +34,19 @@ def sparsify_tensor(x, mask, block):
     return ret
 
 
-def make_pair(shape, device="cuda", alpha=1e-2, beta=0., trans=False, data=None):
+def make_pair(shape, dtype=torch.float32, device="cuda", alpha=1e-2, beta=0., trans=False, data=None):
     if data is None:
-        data = torch.randn(shape, dtype=torch.float32, device=device)
+        data = torch.randn(shape, dtype=dtype, device=device)
     ref_ret = data
     ref_ret = ref_ret * alpha + beta
-    ref_ret = ref_ret.half().float()
+    if dtype is torch.float32:
+        ref_ret = ref_ret.half().float()
+    elif dtype is torch.float16:
+        ref_ret = ref_ret.half()
     if trans:
-        ref_ret = ref_ret.t().requires_grad_()
-    ref_ret = ref_ret.detach().requires_grad_()
-    tri_ret = ref_ret.clone().detach().requires_grad_()
+        ref_ret = ref_ret.t()
+    ref_ret = ref_ret.detach()
+    tri_ret = ref_ret.clone().detach()
     return ref_ret, tri_ret
 
 

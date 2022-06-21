@@ -358,46 +358,10 @@ class _matmul(torch.autograd.Function):
     @staticmethod
     def forward(
         ctx, a, b, trans_a, trans_b, trans_c, mode, spdims, block,
-        c_lut, c_width, da_lut, da_width, db_lut, db_width, out
+        c_lut, c_width, out
     ):
         c = _matmul.fn[mode](a, b, trans_a, trans_b, trans_c, spdims, block, c_lut, c_width, out=out)
-        # save for backward
-        ctx.save_for_backward(a, b)
-        ctx.da_lut = da_lut
-        ctx.da_width = da_width
-        ctx.db_lut = db_lut
-        ctx.db_width = db_width
-        ctx.mode = mode
-        ctx.spdims = spdims
-        ctx.block = block
-        ctx.trans_a = trans_a
-        ctx.trans_b = trans_b
-        ctx.trans_c = trans_c
-        ctx.has_out = out is not None
         return c
-
-    @staticmethod
-    def backward(ctx, dc):
-        # saved for backward
-        a, b = ctx.saved_tensors
-        da, db = None, None
-        mode = ctx.mode
-        # gradients w.r.t. a
-        if ctx.needs_input_grad[0]:
-            mode_da = mode[1] + mode[0] + mode[2]
-            da = _matmul.fn[mode_da](
-                dc, b, ctx.trans_c, not ctx.trans_b, ctx.trans_a, ctx.spdims, ctx.block, ctx.da_lut, ctx.da_width,
-            )
-        # gradients w.r.t. b
-        if ctx.needs_input_grad[1]:
-            mode_db = mode[2] + mode[1] + mode[0]
-            db = _matmul.fn[mode_db](
-                a, dc, not ctx.trans_a, ctx.trans_c, ctx.trans_b, ctx.spdims, ctx.block, ctx.db_lut, ctx.db_width,
-            )
-        dout = dc if ctx.has_out else None
-        return da, db, None, None, None,\
-            None, None, None, None,\
-            None, None, None, None, None, dout
 
 
 class matmul:
@@ -415,23 +379,15 @@ class matmul:
         step = min(block, 32)
         if self.mode == 'sdd':
             self.c_lut, self.c_width = sdd_lut(layout, block, device)
-            self.da_lut, self.da_width = dsd_lut(layout, block, step, True, device)
-            self.db_lut, self.db_width = dsd_lut(layout, block, step, False, device)
         if self.mode == 'dsd':
             self.c_lut, self.c_width = dsd_lut(layout, block, step, not self.trans_a, device)
-            self.da_lut, self.da_width = sdd_lut(layout, block, device)
-            self.db_lut, self.db_width = dsd_lut(layout, block, step, self.trans_a, device)
         if self.mode == 'dds':
             self.c_lut, self.c_width = dsd_lut(layout, block, step, self.trans_b, device)
-            self.da_lut, self.da_width = dsd_lut(layout, block, step, not self.trans_b, device)
-            self.db_lut, self.db_width = sdd_lut(layout, block, device)
 
     def __call__(self, a, b, out=None):
         c = _matmul.apply(
             a, b, self.trans_a, self.trans_b, self.trans_c, self.mode, self.spdims, self.block,
             self.c_lut, self.c_width,
-            self.da_lut, self.da_width,
-            self.db_lut, self.db_width,
             out
         )
         return c
